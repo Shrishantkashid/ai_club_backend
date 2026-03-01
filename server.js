@@ -8,14 +8,12 @@ const contestRoutes = require('./routes/contest');
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-// Configure CORS properly for development and production
-const corsOptions = {
-  origin: process.env.FRONTEND_URL || 'http://localhost:3000', // Allow your frontend domain
+// Enable CORS for all origins - for production, you might want to be more specific
+app.use(cors({
+  origin: '*', // Allow all origins for now
   credentials: true,
   optionsSuccessStatus: 200
-};
-
-app.use(cors(corsOptions));
+}));
 
 // Middleware to parse JSON
 app.use(express.json());
