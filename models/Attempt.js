@@ -18,6 +18,10 @@ const attemptSchema = new mongoose.Schema({
     type: Number,
     default: 0
   },
+  escape_key: {
+    type: String,
+    default: ''
+  },
   total_points: {
     type: Number,
     default: 0

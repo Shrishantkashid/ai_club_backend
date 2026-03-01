@@ -16,6 +16,11 @@ router.post('/login', async (req, res) => {
       return res.status(400).json({ message: 'Valid email is required' });
     }
     
+    // Check if email is from saividya.ac.in domain
+    if (!email.toLowerCase().endsWith('@saividya.ac.in')) {
+      return res.status(400).json({ message: 'Only @saividya.ac.in email addresses are allowed' });
+    }
+    
     // Check if user exists, if not create new user
     let user = await User.findOne({ email: email.toLowerCase() });
     if (!user) {
@@ -183,6 +188,68 @@ router.post('/round2/submit', authenticateToken, async (req, res) => {
   }
 });
 
+// Submit Round 3
+router.post('/round3/submit', authenticateToken, async (req, res) => {
+  try {
+    const { moves, timeTaken, completed, escapeKey, tasksCompleted } = req.body;
+    const userId = req.user.userId;
+
+    // Find the user's attempt
+    let attempt = await Attempt.findOne({ user_id: userId });
+    if (!attempt) {
+      return res.status(404).json({ message: 'No active attempt found' });
+    }
+
+    // Check if this attempt is already disqualified
+    if (attempt.is_disqualified) {
+      return res.status(400).json({ message: 'Your attempt has been disqualified' });
+    }
+
+    // Calculate round 3 points based on tasks completed and escape key
+    let round3Score = 0;
+    if (completed) {
+      // Base points for completing the round
+      round3Score = 100;
+      // Bonus points for each task completed
+      round3Score += (tasksCompleted || 0) * 25;
+      // Bonus for time efficiency
+      round3Score += Math.max(0, 100 - Math.floor(timeTaken / 3));
+    }
+
+    // Calculate total points (all 3 rounds)
+    const totalPoints = attempt.round1_score + attempt.round2_score + round3Score;
+    
+    // Calculate overall accuracy
+    const round1Accuracy = attempt.round1_score; // Already out of 100
+    const round2Accuracy = attempt.round2_score > 0 ? 100 : 0;
+    const round3Accuracy = completed ? 100 : 0;
+    const overallAccuracy = Math.round((round1Accuracy + round2Accuracy + round3Accuracy) / 3);
+
+    // Update the attempt
+    attempt = await Attempt.findOneAndUpdate(
+      { user_id: userId },
+      {
+        round3_score: round3Score,
+        accuracy: overallAccuracy,
+        total_points: totalPoints,
+        escape_key: escapeKey || ''
+      },
+      { new: true }
+    );
+
+    res.json({ 
+      success: true, 
+      message: 'Round 3 submitted successfully',
+      score: round3Score,
+      accuracy: attempt.accuracy,
+      escapeKey: escapeKey
+    });
+  } catch (error) {
+    console.error('Round 3 submission error:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
 // Get leaderboard
 router.get('/leaderboard', async (req, res) => {
   try {
@@ -198,11 +265,12 @@ router.get('/leaderboard', async (req, res) => {
       round1Score: attempt.round1_score,
       round2Score: attempt.round2_score,
       round3Score: attempt.round3_score || 0,
-      totalPoints: attempt.total_points || (attempt.round1_score + attempt.round2_score),
+      totalPoints: attempt.total_points || (attempt.round1_score + attempt.round2_score + (attempt.round3_score || 0)),
       accuracy: Math.round(attempt.accuracy),
       timeTaken: attempt.time_taken,
       isDisqualified: attempt.is_disqualified,
-      submittedAt: attempt.submitted_at
+      submittedAt: attempt.submitted_at,
+      escapeKey: attempt.escape_key || ''
     }));
 
     res.json({ 
@@ -215,21 +283,43 @@ router.get('/leaderboard', async (req, res) => {
   }
 });
 
-// Administrative endpoint to clear all test data
-router.delete('/admin/clear-data', (req, res) => {
-  // Note: This endpoint may need authentication in production
+// Simple endpoint to reset a user's contest attempt
+// Usage: GET /api/contest/unlock/user@saividya.ac.in
+router.get('/unlock/:email', async (req, res) => {
   try {
-    // In a real MongoDB implementation, you would use:
-    // await User.deleteMany({});
-    // await Attempt.deleteMany({});
+    const { email } = req.params;
+    
+    if (!email) {
+      return res.status(400).json({ message: 'Email is required' });
+    }
+    
+    // Find user by email
+    const user = await User.findOne({ email: email.toLowerCase() });
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+    
+    // Delete the user's attempt
+    const deletedAttempt = await Attempt.findOneAndDelete({ user_id: user._id });
+    
+    if (!deletedAttempt) {
+      return res.status(404).json({ message: 'No attempt found for this user - they can already participate' });
+    }
+    
+    // Update user's reset count
+    user.reset_count = (user.reset_count || 0) + 1;
+    await user.save();
+    
+    console.log(`User contest unlocked: ${user.email}. Reset count: ${user.reset_count}`);
     
     res.json({ 
       success: true, 
-      message: 'Test data clearing is not implemented in this version' 
+      message: `User ${user.email} can now participate in the contest again`,
+      resetCount: user.reset_count
     });
   } catch (error) {
-    console.error('Clear data error:', error);
-    res.status(500).json({ message: 'Failed to clear data' });
+    console.error('Unlock error:', error);
+    res.status(500).json({ message: 'Internal server error' });
   }
 });
 
