@@ -4,7 +4,6 @@ require('dotenv').config();
 const mongoose = require('mongoose');
 
 const contestRoutes = require('./routes/contest');
-const testQuizRoutes = require('./routes/testQuiz');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -21,7 +20,6 @@ app.use(express.json());
 
 // Routes
 app.use('/api/contest', contestRoutes);
-app.use('/api/test-quiz', testQuizRoutes);
 
 // Health check endpoint
 app.get('/', (req, res) => {

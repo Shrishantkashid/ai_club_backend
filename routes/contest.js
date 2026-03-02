@@ -64,14 +64,24 @@ router.post('/login', async (req, res) => {
     
     if (!userExists) {
       return res.status(400).json({ 
-        message: 'Your email is not authorized to access this contest. Please register your team using the form below and contact the Student Coordinator for further assistance.',
+        message: 'Your email is not authorized to access this contest',
         registrationLink: 'https://docs.google.com/forms/d/e/1FAIpQLScw--SXP-jLHvkja3gIA4zHlbToI91SEPdLlxG3y1K0qOMjxA/viewform',
         registrationText: 'Register your team here'
       });
     }
     
+    // Check if user exists, if not create new user
+    let user = await User.findOne({ email: email.toLowerCase() });
+    if (!user) {
+      user = await User.create({
+        email: email.toLowerCase(),
+        status: 'ACTIVE',
+        reset_count: 0
+      });
+    }
+
     // Check if this user has already attempted the contest
-    const existingAttempt = await Attempt.findOne({ user_id: userExists._id });
+    const existingAttempt = await Attempt.findOne({ user_id: user._id });
     if (existingAttempt) {
       return res.status(400).json({ 
         message: 'You have already attempted the contest. Access denied.' 
@@ -80,7 +90,7 @@ router.post('/login', async (req, res) => {
     
     // Generate JWT token
     const token = jwt.sign(
-      { userId: userExists._id, email: userExists.email },
+      { userId: user._id, email: user.email },
       JWT_SECRET,
       { expiresIn: '24h' }
     );
@@ -88,9 +98,9 @@ router.post('/login', async (req, res) => {
     res.json({
       token,
       user: {
-        id: userExists._id.toString(),
-        email: userExists.email,
-        status: userExists.status
+        id: user._id.toString(),
+        email: user.email,
+        status: user.status
       }
     });
   } catch (error) {
@@ -120,7 +130,7 @@ const authenticateToken = (req, res, next) => {
 // Submit Round 1
 router.post('/round1/submit', authenticateToken, async (req, res) => {
   try {
-    const { answers, totalQuestions, correctAnswers, autoSubmit, warningCount } = req.body;
+    const { answers, totalQuestions, answeredQuestions, correctAnswers, accuracy, autoSubmit, warningCount } = req.body;
     const userId = req.user.userId;
 
     // Check if user exists
@@ -135,9 +145,21 @@ router.post('/round1/submit', authenticateToken, async (req, res) => {
       return res.status(400).json({ message: 'Attempt already submitted' });
     }
 
-    // Calculate score (out of 100 for better granularity)
-    const round1Score = Math.round((correctAnswers / totalQuestions) * 100);
-    const accuracy = Math.round((correctAnswers / totalQuestions) * 100);
+    // Calculate score based on answered questions (not total questions)
+    const answeredCount = answeredQuestions || Object.keys(answers).length || 0;
+    
+    // Handle edge cases to prevent NaN
+    let round1Score = 0;
+    let finalAccuracy = 0;
+    
+    if (answeredCount > 0 && correctAnswers !== undefined && correctAnswers >= 0) {
+      round1Score = Math.round((correctAnswers / answeredCount) * 100);
+      finalAccuracy = accuracy || Math.round((correctAnswers / answeredCount) * 100);
+    }
+    
+    // Ensure values are valid numbers
+    round1Score = isNaN(round1Score) ? 0 : round1Score;
+    finalAccuracy = isNaN(finalAccuracy) ? 0 : finalAccuracy;
 
     // Determine if user should be disqualified
     // Only disqualify if autoSubmit is true AND warning count exceeded threshold (e.g., 3 warnings)
@@ -149,7 +171,7 @@ router.post('/round1/submit', authenticateToken, async (req, res) => {
       round1_score: round1Score,
       round2_score: 0, // Will be updated later
       round3_score: 0, // Will be updated later
-      accuracy: accuracy,
+      accuracy: finalAccuracy,
       time_taken: 0, // Will be calculated with round2
       is_disqualified: is_disqualified,
       warning_count: warningCount || 0
@@ -159,7 +181,9 @@ router.post('/round1/submit', authenticateToken, async (req, res) => {
       success: true, 
       message: 'Round 1 submitted successfully',
       score: round1Score,
-      accuracy: accuracy,
+      accuracy: finalAccuracy,
+      answered: answeredCount,
+      total: totalQuestions,
       attemptId: attempt._id
     });
   } catch (error) {
@@ -171,7 +195,7 @@ router.post('/round1/submit', authenticateToken, async (req, res) => {
 // Submit Round 2
 router.post('/round2/submit', authenticateToken, async (req, res) => {
   try {
-    const { moves, timeTaken, completed } = req.body;
+    const { moves, timeTaken, completed, completedActivities } = req.body;
     const userId = req.user.userId;
 
     // Find the user's attempt
@@ -210,7 +234,8 @@ router.post('/round2/submit', authenticateToken, async (req, res) => {
         round2_score: round2Score,
         accuracy: overallAccuracy,
         time_taken: timeTaken, // Total time for round 2
-        total_points: totalPoints
+        total_points: totalPoints,
+        completed_activities: completedActivities || [] // Store which activities were completed
       },
       { new: true }
     );
@@ -236,7 +261,18 @@ router.post('/round3/submit', authenticateToken, async (req, res) => {
     // Find the user's attempt
     let attempt = await Attempt.findOne({ user_id: userId });
     if (!attempt) {
-      return res.status(404).json({ message: 'No active attempt found' });
+      // If no attempt exists, create one (this could happen if Round 1/2 weren't properly submitted)
+      attempt = await Attempt.create({
+        user_id: userId,
+        round1_score: 0, // Placeholder for incomplete round
+        round2_score: 0, // Placeholder for incomplete round
+        round3_score: 0,
+        accuracy: 0,
+        time_taken: 0,
+        total_points: 0,
+        is_disqualified: false,
+        warning_count: 0
+      });
     }
 
     // Check if this attempt is already disqualified
@@ -309,7 +345,8 @@ router.get('/leaderboard', async (req, res) => {
       timeTaken: attempt.time_taken,
       isDisqualified: attempt.is_disqualified,
       submittedAt: attempt.submitted_at,
-      escapeKey: attempt.escape_key || ''
+      escapeKey: attempt.escape_key || '',
+      completedActivities: attempt.completed_activities || []
     }));
 
     res.json({ 

@@ -42,6 +42,10 @@ const attemptSchema = new mongoose.Schema({
     type: Number,
     default: 0
   },
+  completed_activities: {
+    type: [String],
+    default: []
+  },
   submitted_at: {
     type: Date,
     default: Date.now
