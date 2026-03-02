@@ -64,7 +64,7 @@ router.post('/login', async (req, res) => {
     
     if (!userExists) {
       return res.status(400).json({ 
-        message: 'Your email is not authorized to access this contest',
+        message: 'Your email is not authorized to access this contest. Please register your team using the form below and contact the Student Coordinator for further assistance.',
         registrationLink: 'https://docs.google.com/forms/d/e/1FAIpQLScw--SXP-jLHvkja3gIA4zHlbToI91SEPdLlxG3y1K0qOMjxA/viewform',
         registrationText: 'Register your team here'
       });
@@ -80,7 +80,7 @@ router.post('/login', async (req, res) => {
     
     // Generate JWT token
     const token = jwt.sign(
-      { userId: user._id, email: user.email },
+      { userId: userExists._id, email: userExists.email },
       JWT_SECRET,
       { expiresIn: '24h' }
     );
@@ -88,9 +88,9 @@ router.post('/login', async (req, res) => {
     res.json({
       token,
       user: {
-        id: user._id.toString(),
-        email: user.email,
-        status: user.status
+        id: userExists._id.toString(),
+        email: userExists.email,
+        status: userExists.status
       }
     });
   } catch (error) {
