@@ -16,6 +16,44 @@ router.post('/login', async (req, res) => {
       return res.status(400).json({ message: 'Valid email is required' });
     }
     
+    // Check if email is the admin account
+    if (email.toLowerCase() === 'admin@gmail.com') {
+      // Admin user - create if doesn't exist
+      let adminUser = await User.findOne({ email: email.toLowerCase() });
+      if (!adminUser) {
+        adminUser = await User.create({
+          email: email.toLowerCase(),
+          status: 'ADMIN',
+          reset_count: 0
+        });
+      }
+      
+      // Check if admin has already attempted the contest
+      const existingAttempt = await Attempt.findOne({ user_id: adminUser._id });
+      if (existingAttempt) {
+        return res.status(400).json({ 
+          message: 'Admin has already attempted the contest. Access denied.' 
+        });
+      }
+      
+      // Generate JWT token for admin
+      const token = jwt.sign(
+        { userId: adminUser._id, email: adminUser.email },
+        JWT_SECRET,
+        { expiresIn: '24h' }
+      );
+      
+      res.json({
+        token,
+        user: {
+          id: adminUser._id.toString(),
+          email: adminUser.email,
+          status: adminUser.status
+        }
+      });
+      return;
+    }
+    
     // Check if email has the correct domain
     if (!email.toLowerCase().endsWith('@saividya.ac.in')) {
       return res.status(400).json({ message: 'Only college email IDs are allowed (team leaders who registered for this event)' });
@@ -438,6 +476,65 @@ router.post('/add-user', async (req, res) => {
     });
   } catch (error) {
     console.error('Add user error:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+// Endpoint to add multiple users to the authorized list
+// Usage: POST /api/contest/add-users-bulk
+router.post('/add-users-bulk', async (req, res) => {
+  try {
+    const { emails, secret } = req.body;
+    
+    // Verify secret
+    if (secret !== 'escapeArena2026') {
+      return res.status(401).json({ message: 'Unauthorized: Invalid secret' });
+    }
+    
+    if (!emails || !Array.isArray(emails)) {
+      return res.status(400).json({ message: 'Emails array is required' });
+    }
+    
+    const results = [];
+    let addedCount = 0;
+    let existingCount = 0;
+    
+    for (const email of emails) {
+      if (!email || !email.includes('@')) {
+        results.push({ email, status: 'error', message: 'Invalid email format' });
+        continue;
+      }
+      
+      // Check if email has the correct domain
+      if (!email.toLowerCase().endsWith('@saividya.ac.in')) {
+        results.push({ email, status: 'error', message: 'Only college email IDs are allowed' });
+        continue;
+      }
+      
+      // Check if user already exists
+      let user = await User.findOne({ email: email.toLowerCase() });
+      if (user) {
+        results.push({ email, status: 'exists', message: 'User already exists and is authorized' });
+        existingCount++;
+      } else {
+        // Create new user
+        user = await User.create({
+          email: email.toLowerCase(),
+          status: 'ACTIVE',
+          reset_count: 0
+        });
+        results.push({ email, status: 'added', message: 'User added and authorized' });
+        addedCount++;
+      }
+    }
+    
+    res.json({ 
+      success: true, 
+      message: `Bulk operation completed: ${addedCount} users added, ${existingCount} users already existed`,
+      results
+    });
+  } catch (error) {
+    console.error('Bulk add users error:', error);
     res.status(500).json({ message: 'Internal server error' });
   }
 });
