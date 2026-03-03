@@ -329,46 +329,31 @@ router.post('/round3/submit', authenticateToken, async (req, res) => {
 router.get('/leaderboard', async (req, res) => {
   try {
     // Get all attempts, populated with user data
-    const attempts = await Attempt.find({ is_disqualified: false })
+    const leaderboard = await Attempt.find({ is_disqualified: false })
       .populate('user_id', 'email')
-      .sort({ total_points: -1, time_taken: 1 }) // Sort by total points descending, then by time ascending
+      .sort({ total_points: -1, time_taken: 1 })
       .exec();
 
-    console.log(`Found ${attempts.length} attempts`);
-
-    const leaderboard = attempts
-      .filter(attempt => {
-        if (!attempt.user_id) {
-          console.log('Filtering out attempt with null user_id:', attempt._id);
-          return false;
-        }
-        return true;
-      })
-      .map(attempt => {
-        // Calculate total_points if it doesn't exist or is undefined
-        const calculatedTotalPoints = (attempt.round1_score || 0) + (attempt.round2_score || 0) + (attempt.round3_score || 0);
-        
-        return {
-          userId: attempt.user_id._id.toString(),
-          email: attempt.user_id.email,
-          round1Score: attempt.round1_score || 0,
-          round2Score: attempt.round2_score || 0,
-          round3Score: attempt.round3_score || 0,
-          totalPoints: attempt.total_points || calculatedTotalPoints,
-          accuracy: Math.round(attempt.accuracy || 0),
-          timeTaken: attempt.time_taken || 0,
-          isDisqualified: attempt.is_disqualified,
-          submittedAt: attempt.submitted_at,
-          escapeKey: attempt.escape_key || '',
-          completedActivities: attempt.completed_activities || []
-        };
-      });
-
-    console.log(`Leaderboard built with ${leaderboard.length} participants`);
+    const formatted = leaderboard
+      .filter(entry => entry.user_id !== null)   // removes broken records
+      .map(entry => ({
+        userId: entry.user_id._id.toString(),
+        email: entry.user_id.email,
+        round1Score: entry.round1_score || 0,
+        round2Score: entry.round2_score || 0,
+        round3Score: entry.round3_score || 0,
+        totalPoints: entry.total_points || ((entry.round1_score || 0) + (entry.round2_score || 0) + (entry.round3_score || 0)),
+        accuracy: Math.round(entry.accuracy || 0),
+        timeTaken: entry.time_taken || 0,
+        isDisqualified: entry.is_disqualified,
+        submittedAt: entry.submitted_at,
+        escapeKey: entry.escape_key || '',
+        completedActivities: entry.completed_activities || []
+      }));
 
     res.json({ 
-      leaderboard,
-      totalParticipants: leaderboard.length
+      leaderboard: formatted,
+      totalParticipants: formatted.length
     });
   } catch (error) {
     console.error('Leaderboard error:', error);
