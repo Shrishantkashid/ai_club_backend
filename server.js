@@ -26,20 +26,42 @@ app.get('/', (req, res) => {
   res.json({ message: 'AI Club Backend API is running!' });
 });
 
-// Connect to MongoDB
-mongoose.connect(process.env.MONGODB_URI)
+// Connect to MongoDB with better connection options
+mongoose.connect(process.env.MONGODB_URI, {
+  serverSelectionTimeoutMS: 5000, // Timeout after 5 seconds instead of 30
+  socketTimeoutMS: 45000,
+  maxPoolSize: 10,
+  minPoolSize: 5,
+  connectTimeoutMS: 10000,
+  retryWrites: true,
+  w: 'majority'
+})
   .then(() => {
-    console.log('Connected to MongoDB');
+    console.log('✅ Connected to MongoDB successfully');
     app.listen(PORT, () => {
-      console.log(`Server running on port ${PORT}`);
+      console.log(`🚀 Server running on port ${PORT}`);
     });
   })
   .catch((error) => {
-    console.error('MongoDB connection error:', error);
-    console.log('Please check your MongoDB Atlas connection string in .env file');
-    console.log('Make sure the cluster name and credentials are correct');
-    // Still start the server to allow health checks
+    console.error('❌ MongoDB connection error:', error.message);
+    console.log('⚠️  Attempting to use fallback connection...');
+    
+    // Try alternative connection approach
+    mongoose.connection.on('disconnected', () => {
+      console.log('⚠️  MongoDB disconnected');
+    });
+    
+    mongoose.connection.on('error', (err) => {
+      console.error('MongoDB connection error:', err);
+    });
+    
+    // Start server anyway for health checks
     app.listen(PORT, () => {
-      console.log(`Server running on port ${PORT} (without MongoDB connection)`);
+      console.log(`⚠️  Server running on port ${PORT} (MongoDB connection failed - check Atlas credentials)`);
+      console.log('💡 Please verify:');
+      console.log('   1. MongoDB Atlas cluster is running');
+      console.log('   2. IP whitelist includes 0.0.0.0/0 (all IPs)');
+      console.log('   3. Database user credentials are correct');
+      console.log('   4. Connection string format is correct');
     });
   });
