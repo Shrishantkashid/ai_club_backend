@@ -221,9 +221,9 @@ router.post('/round1/submit', authenticateToken, async (req, res) => {
     let round1Score = 0;
     let finalAccuracy = 0;
     
-    if (answeredCount > 0 && correctAnswers !== undefined && correctAnswers >= 0) {
-      round1Score = Math.round((correctAnswers / answeredCount) * 100);
-      finalAccuracy = accuracy || Math.round((correctAnswers / answeredCount) * 100);
+    if (correctAnswers !== undefined && correctAnswers >= 0) {
+      round1Score = correctAnswers; // 1 point per correct answer
+      finalAccuracy = answeredCount > 0 ? Math.round((correctAnswers / answeredCount) * 100) : 0;
     }
     
     // Ensure values are valid numbers

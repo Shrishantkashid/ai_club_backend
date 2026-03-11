@@ -495,10 +495,10 @@ router.post('/round1/submit', authenticateToken, async (req, res) => {
       });
     }
     
-    // Calculate score
+    // Calculate score - 1 point per correct answer
     const correctAnswers = Object.values(answers).filter(v => v.isCorrect).length;
     const totalQuestions = Object.keys(answers).length;
-    const round1Score = totalQuestions > 0 ? Math.round((correctAnswers / totalQuestions) * 100) : 0;
+    const round1Score = correctAnswers; // 1 point per correct answer
     
     // Update attempt
     attempt.round1_answers = Object.entries(answers).map(([questionId, answer]) => ({
